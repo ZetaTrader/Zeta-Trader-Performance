@@ -799,7 +799,7 @@ function resetDashboard() {
 </script>
 
 <script>
-const SHEETS_CSV = "https://docs.google.com/spreadsheets/d/1G40ICkERk75un_ptBenw8LDL7CY_yacw4fYzgPriesM/export?format=csv";
+const SHEETS_CSV = "https://docs.google.com/spreadsheets/d/1G40ICkERk75un_ptBenw8LDL7CY_yacw4fYzgPriesM/export?format=csv&gid=1740649169";
 
 function setProgress(pct, msg) {
   const fill = document.getElementById('loading-fill');
@@ -809,8 +809,10 @@ function setProgress(pct, msg) {
 }
 
 function showLoadError() {
-  document.getElementById('loading-msg').style.display = 'none';
-  document.getElementById('loading-fill').parentElement.style.display = 'none';
+  const msgEl = document.getElementById('loading-msg');
+  const barEl = document.getElementById('loading-fill');
+  if (msgEl) msgEl.style.display = 'none';
+  if (barEl) barEl.parentElement.style.display = 'none';
   document.getElementById('load-error').style.display = 'block';
   const fi = document.getElementById('file-input');
   if (fi) fi.addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); });
@@ -834,21 +836,21 @@ function parseCSVLine(line) {
   return result;
 }
 
-function cleanPNL(raw) {
-  if (!raw || raw.trim() === '' || raw.trim() === '$  -' || raw.trim() === '$-') return 0;
-  // Remove $, spaces, and handle negative with dash prefix
-  let s = raw.replace(/[$\s]/g, '').replace(/\./g, '').replace(',', '.');
-  return parseFloat(s) || 0;
+function cleanNumber(raw) {
+  if (!raw || raw.trim() === '' || raw.trim() === '-' || raw.trim() === '$  -' || raw.trim() === '$ -') return 0;
+  let s = String(raw).replace(/[$ ]/g, '');
+  // Handle formats like -$ 130,00 or $ 147,00
+  const negative = s.includes('-');
+  s = s.replace(/-/g, '').replace(/\./g, '').replace(',', '.');
+  const val = parseFloat(s) || 0;
+  return negative ? -val : val;
 }
 
 function parseCSVDate(raw) {
   if (!raw) return null;
   raw = raw.trim();
-  // D/M/YYYY or DD/MM/YYYY
   const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) {
-    return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
-  }
+  if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
   return null;
 }
 
@@ -866,37 +868,48 @@ async function loadFromSheets() {
   try {
     setProgress(20, 'CONECTANDO CON GOOGLE SHEETS...');
 
-    // Use a CORS proxy to fetch the CSV
-    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(SHEETS_CSV);
-    const resp = await fetch(proxyUrl);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    // Try direct fetch first, fall back to proxy
+    let text;
+    try {
+      const direct = await fetch(SHEETS_CSV);
+      if (direct.ok) text = await direct.text();
+      else throw new Error('direct failed');
+    } catch(e) {
+      const proxy = 'https://corsproxy.io/?' + encodeURIComponent(SHEETS_CSV);
+      const resp = await fetch(proxy);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      text = await resp.text();
+    }
 
     setProgress(60, 'PROCESANDO DATOS...');
-    const text = await resp.text();
     const lines = text.split('\n').filter(l => l.trim());
     if (lines.length < 2) throw new Error('Sin datos');
 
     const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
-    const fechaIdx = headers.findIndex(h => h.includes('fecha') || h.includes('date'));
-    const tokenIdx = headers.findIndex(h => h.includes('token') || h.includes('symbol'));
-    const ladoIdx  = headers.findIndex(h => h.includes('lado') || h.includes('side'));
-    const entIdx   = headers.findIndex(h => h.includes('entrada') || h.includes('entry'));
-    const salIdx   = headers.findIndex(h => h.includes('salida') || h.includes('exit'));
-    const tamIdx   = headers.findIndex(h => h.includes('tama') || h.includes('size'));
-    const apalIdx  = headers.findIndex(h => h.includes('apal') || h.includes('lever'));
-    const pnlIdx   = headers.findIndex(h => h.trim() === 'pnl' || h.includes('ganancia') || h.includes('profit'));
-    const cierreIdx = headers.findIndex(h => h.includes('cierre') || h.includes('exit_type'));
+    const idx = (names) => headers.findIndex(h => names.some(n => h.includes(n)));
+
+    const fechaIdx  = idx(['fecha','date']);
+    const tokenIdx  = idx(['token','symbol']);
+    const ladoIdx   = idx(['lado','side']);
+    const entIdx    = idx(['entrada','entry']);
+    const salIdx    = idx(['salida','exit','cierre']);
+    const tamIdx    = idx(['tama','size']);
+    const apalIdx   = idx(['apal','lever']);
+    const pnlIdx    = idx(['pnl','ganancia','profit']);
+    const tipIdx    = idx(['tipo','exit_type','tp','sl']);
 
     const trades = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCSVLine(lines[i]);
-      if (!cols[fechaIdx] || !cols[tokenIdx]) continue;
+      const fechaRaw = cols[fechaIdx] || '';
+      const tokenRaw = cols[tokenIdx] || '';
+      if (!fechaRaw.trim() || !tokenRaw.trim()) continue;
 
-      const dateObj = parseCSVDate(cols[fechaIdx]);
+      const dateObj = parseCSVDate(fechaRaw);
       if (!dateObj) continue;
 
-      const pnl = cleanPNL(cols[pnlIdx] || '');
-      const rawToken = (cols[tokenIdx] || '').toUpperCase().trim();
+      const pnl = cleanNumber(cols[pnlIdx] || '');
+      const rawToken = tokenRaw.toUpperCase().trim();
       const token = rawToken.includes('/') ? rawToken.split('/')[0] : rawToken.replace(/USDT$|BUSD$|USD$/, '') || rawToken;
 
       trades.push({
@@ -906,10 +919,10 @@ async function loadFromSheets() {
         lado: (cols[ladoIdx] || '').toUpperCase().trim(),
         entrada: cols[entIdx] || '',
         salida: cols[salIdx] || '',
-        tamaño: cols[tamIdx] || '',
+        tamaño: cleanNumber(cols[tamIdx] || ''),
         pnl: Math.round(pnl * 100) / 100,
         apalancamiento: cols[apalIdx] || '',
-        tipo_salida: cols[cierreIdx] || '',
+        tipo_salida: cols[tipIdx] || '',
       });
     }
 
@@ -917,15 +930,15 @@ async function loadFromSheets() {
 
     setProgress(100, 'LISTO');
     allTrades = trades;
-
     setTimeout(() => {
       renderDashboard(trades);
       if (btn) btn.textContent = '↺ actualizar';
     }, 300);
 
   } catch(err) {
-    console.error('Sheets load error:', err);
-    if (document.getElementById('dashboard').style.display === 'none' ||
+    console.error('Error:', err);
+    if (!document.getElementById('dashboard') ||
+        document.getElementById('dashboard').style.display === 'none' ||
         document.getElementById('dashboard').style.display === '') {
       showLoadError();
     } else {
