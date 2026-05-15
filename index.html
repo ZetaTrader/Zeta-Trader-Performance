@@ -509,15 +509,7 @@ function renderDashboard(trades) {
   setText('s-best', fmtInt(best), 'green', 'USDT');
   setText('s-worst', fmtInt(worst), 'red', 'USDT');
 
-  // ── LONG/SHORT BARS
-  const longs = trades.filter(t => t.lado === 'LONG').length;
-  const shorts = trades.filter(t => t.lado === 'SHORT').length;
-  const longPct = Math.round(longs / trades.length * 100);
-  const shortPct = 100 - longPct;
-  document.getElementById('bar-long').style.width = longPct + '%';
-  document.getElementById('bar-short').style.width = shortPct + '%';
-  document.getElementById('bar-long-pct').textContent = longPct + '%';
-  document.getElementById('bar-short-pct').textContent = shortPct + '%';
+  // ── LONG/SHORT BARS → se actualizan en renderCalendar por mes
 
   // ── CHART
   renderChart(trades);
@@ -781,6 +773,21 @@ function renderCalendar(trades, year, month) {
     html += `<div class="${cls}"><span class="cal-num">${d}</span>${pnlLabel}</div>`;
   }
   grid.innerHTML = html;
+
+  // ── LONG/SHORT BARS (filtrados por el mes visible)
+  const monthTrades = trades.filter(t => {
+    const d = t.dateObj;
+    return d && d.getFullYear() === year && d.getMonth() === month;
+  });
+  const total = monthTrades.length;
+  const longs  = monthTrades.filter(t => t.lado === 'LONG').length;
+  const shorts = monthTrades.filter(t => t.lado === 'SHORT').length;
+  const longPct  = total > 0 ? Math.round(longs  / total * 100) : 0;
+  const shortPct = total > 0 ? Math.round(shorts / total * 100) : 0;
+  document.getElementById('bar-long').style.width  = longPct  + '%';
+  document.getElementById('bar-short').style.width = shortPct + '%';
+  document.getElementById('bar-long-pct').textContent  = total > 0 ? longPct  + '%' : '—';
+  document.getElementById('bar-short-pct').textContent = total > 0 ? shortPct + '%' : '—';
 }
 
 function changeMonth(dir) {
