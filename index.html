@@ -118,6 +118,10 @@
   table.trades tr:hover td { background: var(--bg3); }
   .side-badge { font-size: 8px; font-weight: bold; padding: 2px 6px; border-radius: 2px; background: #2d1414; color: var(--neg); font-family: 'Syne', sans-serif; letter-spacing: 1px; }
   .side-badge.long { background: #182818; color: var(--accent); }
+  .cierre-badge { font-size: 8px; font-weight: bold; padding: 2px 6px; border-radius: 2px; font-family: 'Syne', sans-serif; letter-spacing: 1px; }
+  .cierre-badge.tp { background: #182818; color: #4ade80; }
+  .cierre-badge.sl { background: #2d1414; color: #f87171; }
+  .cierre-badge.manual { background: #1e1e2a; color: #94a3b8; }
 
   .cal-section { background: var(--bg2); border: 1px solid var(--border); padding: 12px; }
   .cal-title { font-family: 'Syne', sans-serif; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; }
@@ -705,6 +709,16 @@ function renderChart(trades) {
   });
 }
 
+// ─── CIERRE BADGE ────────────────────────────────────────────
+function cierreBadge(tipo) {
+  if (!tipo) return '';
+  const t = tipo.toUpperCase().trim();
+  if (t === 'TP')     return `<span class="cierre-badge tp">TP</span>`;
+  if (t === 'SL')     return `<span class="cierre-badge sl">SL</span>`;
+  if (t === 'MANUAL') return `<span class="cierre-badge manual">MANUAL</span>`;
+  return `<span class="cierre-badge manual">${tipo}</span>`;
+}
+
 // ─── TABLE ───────────────────────────────────────────────────
 function renderTable(trades) {
   const sorted = [...trades].sort((a,b) => b.dateObj - a.dateObj);
@@ -723,7 +737,7 @@ function renderTable(trades) {
       <td class="muted">${fmtNum(t.tamaño)}</td>
       <td class="muted">${t.apalancamiento}</td>
       <td style="color:${pnlColor};font-weight:bold">${pnlStr}</td>
-      <td style="color:#6b7280;font-size:10px">${t.tipo_salida}</td>
+      <td>${cierreBadge(t.tipo_salida)}</td>
     </tr>`;
   }).join('');
 }
@@ -899,11 +913,11 @@ async function loadFromSheets() {
     const tokenIdx  = idx(['token','symbol']);
     const ladoIdx   = idx(['lado','side']);
     const entIdx    = idx(['entrada','entry']);
-    const salIdx    = idx(['salida','exit','cierre']);
+    const salIdx    = idx(['salida','exit','precio_salida']);
     const tamIdx    = idx(['tama','size']);
     const apalIdx   = idx(['apal','lever']);
     const pnlIdx    = idx(['pnl','ganancia','profit']);
-    const tipIdx    = idx(['tipo','exit_type','tp','sl']);
+    const tipIdx    = idx(['cierre','tipo_salida','tipo','exit_type']);
 
     const trades = [];
     for (let i = 1; i < lines.length; i++) {
